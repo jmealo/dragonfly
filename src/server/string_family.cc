@@ -1782,7 +1782,6 @@ void CmdClThrottle(CmdArgParser parser, CommandContext* cmd_cntx) {
 
   if (result) {
     RedisReplyBuilder* redis_builder = static_cast<RedisReplyBuilder*>(cmd_cntx->rb());
-    redis_builder->StartArray(result->size());
     auto& array = result.value();
 
     // Round milliseconds up to whole seconds. The previous form truncated and
@@ -1791,9 +1790,12 @@ void CmdClThrottle(CmdArgParser parser, CommandContext* cmd_cntx) {
     array[3] = array[3] > 0 ? (array[3] + 999) / 1000 : array[3] / 1000;
     array[4] = array[4] > 0 ? (array[4] + 999) / 1000 : array[4] / 1000;
 
-    for (const auto& v : array) {
-      redis_builder->SendLong(v);
-    }
+    // Emit the array under a single ReplyScope. StartArray followed by five
+    // unscoped SendLong calls flushed six times: each Send opens its own scope,
+    // and ~ReplyScope calls FinishScope(), which flushes whenever batched_ is
+    // false -- which it always is for a client with one request in flight.
+    // SendLongArr already wraps StartArray and the loop in one scope.
+    redis_builder->SendLongArr(absl::MakeConstSpan(array));
   } else {
     switch (result.status()) {
       case OpStatus::WRONG_TYPE:
