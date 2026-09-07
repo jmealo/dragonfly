@@ -1785,17 +1785,11 @@ void CmdClThrottle(CmdArgParser parser, CommandContext* cmd_cntx) {
     redis_builder->StartArray(result->size());
     auto& array = result.value();
 
-    int64_t retry_after_s = array[3] / 1000;
-    if (array[3] > 0) {
-      retry_after_s += 1;
-    }
-    array[3] = retry_after_s;
-
-    int64_t reset_after_s = array[4] / 1000;
-    if (array[4] > 0) {
-      reset_after_s += 1;
-    }
-    array[4] = reset_after_s;
+    // Round milliseconds up to whole seconds. The previous form truncated and
+    // then added one whenever the value was positive, so an exact multiple of
+    // 1000 was over-reported by a second: a 2s emission interval reported 3.
+    array[3] = array[3] > 0 ? (array[3] + 999) / 1000 : array[3] / 1000;
+    array[4] = array[4] > 0 ? (array[4] + 999) / 1000 : array[4] / 1000;
 
     for (const auto& v : array) {
       redis_builder->SendLong(v);
